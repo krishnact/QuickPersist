@@ -19,7 +19,7 @@ public class ClassBuilder {
 		String packageName
 		def createdClasses 
 		@SuppressWarnings("rawtypes")
-		Class[] loadedClasses;
+		List<Class> loadedClasses;
 		int pos = 0
 		String idColName = "id_"
 		/**

@@ -8,7 +8,8 @@ import javax.xml.parsers.ParserConfigurationException
 
 import org.codehaus.groovy.reflection.ReflectionUtils;
 import org.codehaus.groovy.tools.xml.DomToGroovy;
-import org.h2.mvstore.cache.CacheLongKeyLIRS.Config;
+import org.h2.mvstore.cache.CacheLongKeyLIRS.Config
+import org.h2.tools.Server;
 import org.hibernate.Session
 import org.hibernate.SessionFactory;
 import org.hibernate.cfg.Configuration
@@ -21,39 +22,141 @@ import org.xml.sax.SAXException
 import groovy.text.SimpleTemplateEngine;;
 class QuickPersist {
 	static org.slf4j.Logger LOGGER = LoggerFactory.getLogger(QuickPersist.class) 
+	private static def profileMaps =[
+		"h2.local" :[host:'127.0.0.1', port: 3743,dbPath:"quick_persist",showSQL: false],
+		"h2.file" :[host:'127.0.0.1', port: 3743,dbPath:"quick_persist",showSQL: false ],
+		"h2.memory" : [dbPath:"quick_persist",showSQL: false],
+		"hsqldb.memory" :[dbPath:"quick_persist",showSQL: false]
+	]
+	static def serversList = []
+	SessionFactory sessionFactory;
+	Session        session;
+	Configuration  conf;
+	/**
+	 * Creates a QuickPersis object. 
+	 * @param profile Profile. One of h2.local, h2.mem, h2.file, hsqldb.memory,postgresql
+	 * @param params  Parameters. If params is null then default parameters are used. They are different for each profile.
+	 */
+	QuickPersist(String profile, Map<String, String> params)
+	{
+		conf = getHibernateConf(profile, params);
+	}
+	
+	
+	/**
+	 * Creates a QuickPersis object.
+	 * @param profile Hibernate config file
+	 */
+	QuickPersist(File confFile)
+	{
+		conf = getHibernateConf(confFile);
+	}
+	
+	/**
+	 * Creates a QuickPersis object.
+	 * @param profile Hibernate Conf
+	 */
+	QuickPersist(Configuration conf)
+	{
+		this.conf = conf
+	}
+
+	public String getConnectionURL()
+	{
+		return this.conf.getProperty("connection.url")
+	}
+	
+	public String getDriverClass()
+	{
+		return this.conf.getProperty("connection.driver_class")
+	}
+	
 	/**
 	 * Insert into database when you already have Objects of entity Class
 	 * @param objects
 	 * @return
 	 */
-	public static Session writeIntoDatabase(def objects, Class[] classes, File hibernateConfigFile = null, boolean clean = true)
+	public static QuickPersist writeIntoDatabase(
+		List<Object> objects, 
+		List<Class> classes, 
+		File hibernateConfigFile )
 	{
 		
 		Configuration cfg = null;
 		SessionFactory sessionFactory = null
 		cfg = getHibernateConf(hibernateConfigFile)
 		
-		classes.each{
-			cfg.addAnnotatedClass(it)
-		}
+		return writeIntoDatabase(objects,classes,cfg,true);
+	}
 
-		sessionFactory =   cfg.buildSessionFactory();
+	private Session open()
+	{
+
+		sessionFactory =   this.conf.buildSessionFactory();
 		Session session = sessionFactory.openSession();
+		return session;
+	}
+	
+	public Session writeIntoDatabaseEx(
+		def objects,
+		List<Class> classes,
+		boolean clean = false)
+	{
+		
+		classes.each{
+			conf.addAnnotatedClass(it)
+		}
+		session = open()
 
 		session.beginTransaction();
 		objects.each {
-			//println "Inserting $it"
 			session.saveOrUpdate(it);
 		}
 		session.getTransaction().commit();
 		if ( clean == true)
 		{
-			session.close()
-			sessionFactory.close()
+			this.close()
 		}
 		return session;
 	}
+	
+	public void close()
+	{
+		if ( this.sessionFactory != null)
+		{
+			session.close()
+			sessionFactory.close()
+			this.sessionFactory = null;
+		}
+	}
+	
+	/**
+	 * Insert into database when you already have Objects of entity Class
+	 * @param objects
+	 * @return
+	 */
+	public static QuickPersist writeIntoDatabase(
+		List<Object> objects, 
+		List<Class> classes, 
+		Configuration cfg = null, 
+		boolean clean = false)
+	{
+		SessionFactory sessionFactory = null
+		
+		classes.each{
+			cfg.addAnnotatedClass(it)
+		}
 
+		QuickPersist qp = new QuickPersist(cfg);
+		qp.writeIntoDatabaseEx(objects,classes,clean)
+		return qp
+	}
+
+	public void cleanSession(Session sess)
+	{
+		
+	}
+	
 	/**
 	 * Insert into database when you already have Objects of entity Class
 	 * session Hibernate session to use
@@ -70,56 +173,60 @@ class QuickPersist {
 		return session;
 	}
 
-	public static void writeIntoDatabaseLite(ClassBuilder cb,def objects, File hibernateConfigFile=null)
+//	/**
+//	 * Writes into database
+//	 * @param cb The class builder
+//	 * @param objects The list of Objects
+//	 * @param hibernateConfigFile Hibernate config file
+//	 */
+//	public static QuickPersist writeIntoDatabaseLite(ClassBuilder cb,def objects)
+//	{
+//		
+////		Configuration cfg = null;
+////		SessionFactory sessionFactory = null
+////		cfg = getHibernateConf(hibernateConfigFile)
+////		cb.loadedClasses.each{
+////			cfg.addAnnotatedClass(it)
+////		}
+////		sessionFactory =   cfg.buildSessionFactory();
+////		Session session = sessionFactory.openSession();
+////
+////		session.beginTransaction();
+////		objects.each {
+////			session.save(it);
+////		}
+////		session.getTransaction().commit();
+//		
+//		Configuration cfg = getHibernateConf(hibernateConfigFile)
+//		return writeIntoDatabaseLite(cb,objects,cfg);
+//	}
+//	
+	
+	public static QuickPersist writeIntoDatabaseLite(ClassBuilder cb,def objects, Configuration cfg)
 	{
 		
-		Configuration cfg = null;
 		SessionFactory sessionFactory = null
-		cfg = getHibernateConf(hibernateConfigFile)
 		cb.loadedClasses.each{
 			cfg.addAnnotatedClass(it)
 		}
-		sessionFactory =   cfg.buildSessionFactory();
-		Session session = sessionFactory.openSession();
-
-		session.beginTransaction();
-		objects.each {
-			//println "Inserting $it"
-			session.save(it);
-		}
-		session.getTransaction().commit();
+		return writeIntoDatabase(objects, cb.loadedClasses,cfg)
 	}
 	
-	
-	public static Session writeIntoDatabaseLite(ClassBuilder cb,def objects, Configuration cfg)
-	{
-		
-		SessionFactory sessionFactory = null
-		cb.loadedClasses.each{
-			cfg.addAnnotatedClass(it)
-		}
-		sessionFactory =   cfg.buildSessionFactory();
-		Session session = sessionFactory.openSession();
+//	/**
+//	 * Insert into database when you already have Objects of entity Class
+//	 * @param objects
+//	 * @return Session
+//	 */
+//	public static QuickPersist writeIntoDatabaseLite(def objects, File hibernateConfigFile = null, boolean clean = true)
+//	{
+//		return writeIntoDatabase(objects, [objects[0].class], hibernateConfigFile, clean)
+//	}
 
-		session.beginTransaction();
-		objects.each {
-			//println "Inserting $it"
-			session.save(it);
-		}
-		session.getTransaction().commit();
-		return session
-	}
-	
 	/**
-	 * Insert into database when you already have Objects of entity Class
-	 * @param objects
-	 * @return
+	 * Get Hibernate Configuration from Hibernate config xml
+	 * @param hibernateConfigFile
+	 * @return Configuration
 	 */
-	public static Session writeIntoDatabaseLite(def objects, File hibernateConfigFile = null, boolean clean = true)
-	{
-		return writeIntoDatabase(objects, [objects[0].class], hibernateConfigFile, clean)
-	}
-
 	public static Configuration getHibernateConf(File hibernateConfigFile)
 	{
 		Configuration cfg = null;
@@ -172,13 +279,17 @@ class QuickPersist {
 	 * @param objectTypeName The tableName
 	 * @param hibernateCfg hibernate configuration
 	 */
-	public static Session WriteToDB(def arrayOfObjects, String objectTypeName, Configuration hibernateCfg = QuickPersist.getHibernateConf("h2mem"), boolean printClasses=false)
+	public static QuickPersist WriteToDB(
+		List<Object> arrayOfObjects, 
+		String objectTypeName, 
+		Configuration hibernateCfg = QuickPersist.getHibernateConf("h2.memory")
+	)
 	{
-		ClassBuilder cb = WriteToDBPart1(arrayOfObjects, objectTypeName, printClasses)
+		ClassBuilder cb = WriteToDBPart1(arrayOfObjects, objectTypeName, false)
 		// Now create Objects
 		def objs = cb.createObjects(objectTypeName,arrayOfObjects)
 
-		Session retVal = writeIntoDatabaseLite(cb, objs, hibernateCfg)
+		QuickPersist retVal = writeIntoDatabaseLite(cb, objs, hibernateCfg)
 		return retVal
 	}
 	
@@ -187,43 +298,64 @@ class QuickPersist {
 	{
 		
 		Configuration retVal = null
-		switch (profile){
-			case "h2local" :
-				if ( map == null)
-				{
-					map =[host:'127.0.0.1', port: 3743,dbPath:"quick_persist",showSQL: false]
-				}
-				retVal= getFromResource("h2.tcp.hibernate.cfg.xml",map)
-				break;
-			case "h2file" :
-				if ( map == null)
-				{
-					map =[host:'127.0.0.1', port: 3743,dbPath:"quick_persist",showSQL: false]
-				}
-				retVal= getFromResource("h2.file.hibernate.cfg.xml",map)
-				break;
-			case "h2mem" :
-				if ( map == null)
-				{
-					map =[dbPath:"quick_persist",showSQL: false]
-				}
-				retVal= getFromResource("h2.memory.hibernate.cfg.xml",map)
-				break;
-			case "hsqldbmem" :
-				if ( map == null)
-				{
-					map =[dbPath:"quick_persist"]
-				}
-				retVal= getFromResource("hsqldb.memory.hibernate.cfg.xml",map)
-				break;
-			
-			default :
-				break;
+		if (map == null)
+		{
+			map = [:]
 		}
+		def myMap = [:]
 		
+		def storedParamsMap = profileMaps[profile]
+		if (storedParamsMap == null)
+		{
+			String profiles = profileMaps.keySet().join(", ")
+			throw new RuntimeException("Unknown profile '${profile}'. Please use one of these as profile: ${profiles} ")
+		}else{
+			storedParamsMap.each{entry->
+				myMap[entry.key] = entry.value
+			}
+		}
+		map.each{entry->
+			myMap[entry.key] = entry.value
+		}
+
+		retVal= getFromResource("${profile}.hibernate.cfg.xml",myMap)
+		
+		if ( profile.startsWith("h2"))
+		{
+			if (myMap.tcpserver != null )
+			{
+				Server server = Server.createTcpServer(myMap.tcpserver.split(/[\s]+/)).start()
+				serversList << server
+			}
+			if (myMap.webserver != null )
+			{
+				String[] args = new String[0];
+				if (myMap.webserver != ""){
+					args = myMap.webserver.split(/[\s]+/)
+				}
+				Server server = Server.createWebServer(args).start()
+				serversList << server
+				if ( !(myMap.noBrowser == true))
+				{
+					Server.openBrowser(server.getURL())
+				}
+			}
+			
+			
+		}
 		return retVal
 	}
 	
+	public static void waitForServers()
+	{
+		serversList.each{Server server->
+			while (server.isRunning(false))
+			{
+				sleep(1000)
+			}
+		}
+		serversList =[]
+	}
 	
 	public static Configuration getFromResource(String resourceName, def map)
 	{
@@ -250,7 +382,6 @@ class QuickPersist {
 		cfg.configure(tmpFile);//bais, resourceName)
 		tmpFile.delete()
 		return cfg
-
 	}
 
 }

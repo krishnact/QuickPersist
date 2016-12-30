@@ -110,6 +110,7 @@
 			<groupId>org.codehaus.groovy</groupId>
 			<artifactId>groovy-all</artifactId>
 			<version>${groovyVersion}</version>
+			<scope>provided</scope>
 		</dependency>
 		<!-- https://mvnrepository.com/artifact/org.grails/grails-datastore-gorm-hibernate4 -->
 		<dependency>

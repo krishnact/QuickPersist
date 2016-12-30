@@ -15,7 +15,6 @@
 // The lines above are commented so that this script can be run in Eclipse without slowing it down.
 // Uncomment them to run this script as Groovy script
 
-
 import java.text.SimpleDateFormat
 
 import org.hibernate.Session;
@@ -27,6 +26,7 @@ import groovy.io.FileType;
 def dir = new File(System.properties['java.io.tmpdir'])
 
 SimpleDateFormat sdfDay = new SimpleDateFormat('EEE')
+
 def fileStats = dir.listFiles().collect{ file ->
 		String fileType = file.name.split(/\./)[-1]
 		
@@ -44,7 +44,8 @@ def fileStats = dir.listFiles().collect{ file ->
 		]
 }
 
-QuickPersist qp= QuickPersist.WriteToDB(fileStats, "fileinfo")
+QuickPersist qp= QuickPersist.WriteToDB(fileStats, "fileinfo",QuickPersist.getHibernateConf("h2.memory",[webserver:""]))
+println "Please use this connection URL if you need to connect to the DB Server: ${qp.connectionURL}"
 groovy.sql.Sql sql = new groovy.sql.Sql(qp.session.connection())
 // Now you can execute sqls
 sql.rows("select filetype, avg(filesize) as avgSize from fileinfo group by filetype order by avgsize").each{ it->
@@ -66,6 +67,7 @@ println table.toHTML(table:[id:'myTable', style:'myTableStyle', border:'1']){
 	return "${it.AVGSIZE}*${it.CNT}=${it.TOTAL}"
 }
 
-qp.close()
 
+qp.waitForServers()
+qp.close()
 println "Session closed"
