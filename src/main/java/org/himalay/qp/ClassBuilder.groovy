@@ -152,14 +152,15 @@ public class ClassBuilder {
 			{
 				return originalName.replaceAll(/[^A-Za-z0-9_]/, "_")
 			}
-			def addField(String name, Class type) {
-				fields[getJavaName(name)] = type.name
-				annotation[getJavaName(name)] = ""
+			void addField(String name, Class type) {
+
+					fields[getJavaName(name)] = type.name
+					annotation[getJavaName(name)] = ""
 			}
 			
-			def addField(String name, String type, String annot) {
-				fields[getJavaName(name)] = type
-				annotation[getJavaName(name)] = annot
+			void addField(String name, String type, String annot) {
+					fields[getJavaName(name)] = type
+					annotation[getJavaName(name)] = annot
 			}
 			
 			def addFieldList(String name, String type, String annot) {
@@ -267,7 +268,7 @@ long ${idColName}
 						addImport(possibleClassName)
 					} else if (value.getClass().getName() == 'java.lang.String'){
 						addField(key, value.getClass().getName(),"@Column( length = 500000)")
-					} else{
+					} else if (value != null){
 						addField(key, value.getClass())
 					}
 				}
